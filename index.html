@@ -12,7 +12,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, set, push, remove, onValue, update }
+import { getDatabase, ref, set, get, push, remove, onValue, update }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
@@ -28,35 +28,51 @@ const firebaseConfig = {
 };
 
 const firebaseApp = initializeApp(firebaseConfig);
-const db  = getDatabase(firebaseApp);
+const db   = getDatabase(firebaseApp);
 const auth = getAuth(firebaseApp);
 
-window._db     = db;
-window._auth   = auth;
-window._ref    = ref;
-window._set    = set;
-window._push   = push;
-window._remove = remove;
+window._db      = db;
+window._auth    = auth;
+window._ref     = ref;
+window._set     = set;
+window._get     = get;
+window._push    = push;
+window._remove  = remove;
 window._onValue = onValue;
-window._update = update;
-window._signIn = (email, password) => signInWithEmailAndPassword(auth, email, password);
+window._update  = update;
+window._signIn  = (email, password) => signInWithEmailAndPassword(auth, email, password);
 window._signOut = () => signOut(auth);
+window._update  = update;
 
-// Map email → display name
-const EMAIL_NAME_MAP = {
-  // These will be filled from Firebase Auth; fallback shown below
+// Load all user display names from /userProfiles so badges show correctly
+window._loadAllProfiles = async () => {
+  const snap = await get(ref(db, 'userProfiles'));
+  const data = snap.val() || {};
+  window._allProfiles = data; // { uid: { displayName } }
 };
 
 window.addEventListener('DOMContentLoaded', () => {
-  onAuthStateChanged(auth, (user) => {
+  onAuthStateChanged(auth, async (user) => {
     if (user) {
-      // Derive display name from email: nemanja@... → "Nemanja"
-      const localPart = user.email.split('@')[0];
-      const displayName = localPart.charAt(0).toUpperCase() + localPart.slice(1).toLowerCase();
+      // Load or create this user's profile
+      const profileRef = ref(db, 'userProfiles/' + user.uid);
+      const snap = await get(profileRef);
+      let displayName;
+      if (snap.exists() && snap.val().displayName) {
+        displayName = snap.val().displayName;
+      } else {
+        // First login — seed from email local part
+        const localPart = user.email.split('@')[0];
+        displayName = localPart.charAt(0).toUpperCase() + localPart.slice(1).toLowerCase();
+        await set(profileRef, { displayName, email: user.email });
+      }
       window._authUser = { uid: user.uid, email: user.email, displayName };
+      // Load all profiles so we can resolve other users' names
+      await window._loadAllProfiles();
       showApp();
     } else {
       window._authUser = null;
+      window._allProfiles = {};
       showLogin();
     }
   });
@@ -220,10 +236,19 @@ window.addEventListener('DOMContentLoaded', () => {
   .modal-title{font-family:'DM Serif Display',serif;font-size:22px;margin-bottom:4px;}
   .modal-subtitle{font-size:12px;color:var(--muted);margin-bottom:16px;}
 
+  .who-selector{display:flex;gap:8px;flex-wrap:wrap;}
+  .who-option{flex:1;min-width:120px;padding:10px;border-radius:12px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;font-weight:500;cursor:pointer;text-align:center;transition:all 0.15s;}
+  .who-option.selected{border-color:var(--warm);background:var(--warm-dim);color:var(--warm);font-weight:700;}
+  .who-option.selected-spouse{border-color:var(--sage);background:var(--sage-dim);color:var(--sage);font-weight:700;}
+
   /* Account modal */
   .account-avatar{width:64px;height:64px;border-radius:50%;background:var(--warm-dim);border:2px solid var(--warm);display:flex;align-items:center;justify-content:center;font-size:26px;margin:0 auto 14px;}
   .account-name{font-family:'DM Serif Display',serif;font-size:24px;text-align:center;margin-bottom:4px;}
-  .account-email{font-size:13px;color:var(--muted);text-align:center;margin-bottom:24px;}
+  .account-email{font-size:13px;color:var(--muted);text-align:center;margin-bottom:20px;}
+  .account-name-edit{display:none;margin-bottom:16px;}
+  .account-name-edit input{width:100%;border:1.5px solid var(--warm);border-radius:12px;padding:12px 14px;font-family:'DM Serif Display',serif;font-size:20px;text-align:center;color:var(--text);background:var(--surface2);outline:none;}
+  .account-name-row{display:flex;gap:8px;margin-bottom:16px;}
+  .account-name-row .btn-primary{padding:11px 14px;font-size:13px;}
 
   /* Drill-down */
   .drill-header{display:flex;align-items:center;gap:12px;margin-bottom:16px;}
@@ -245,6 +270,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   .who-badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;background:var(--warm-dim);color:var(--warm);margin-left:4px;text-transform:uppercase;letter-spacing:0.04em;}
   .who-badge.elena{background:var(--sage-dim);color:var(--sage);}
+  /* 'elena' class = second user; dynamically assigned in renderHome/drill */
 
   .empty{text-align:center;padding:28px 16px;color:var(--muted);}
   .empty-icon{font-size:36px;margin-bottom:8px;}
@@ -402,8 +428,19 @@ window.addEventListener('DOMContentLoaded', () => {
     <div class="account-avatar" id="accountAvatar">👤</div>
     <div class="account-name" id="accountName">Name</div>
     <div class="account-email" id="accountEmail">email</div>
+
+    <!-- Inline rename -->
+    <div class="account-name-edit" id="accountNameEdit">
+      <input type="text" id="accountNameInput" placeholder="Enter your name">
+    </div>
+    <div class="account-name-row">
+      <button class="btn-primary" id="renameToggleBtn" onclick="toggleRename()" style="background:var(--surface2);">✏️ Change Name</button>
+      <button class="btn-primary btn-sage" id="renameSaveBtn" style="display:none" onclick="saveDisplayName()">Save</button>
+      <button class="btn-primary" id="renameCancelBtn" style="display:none;background:var(--surface2)" onclick="cancelRename()">Cancel</button>
+    </div>
+
     <button class="btn-primary btn-rose" onclick="doSignOut()">Sign Out</button>
-    <button class="cancel-btn" onclick="closeAccountModal()">Cancel</button>
+    <button class="cancel-btn" onclick="closeAccountModal()">Close</button>
   </div>
 </div>
 
@@ -440,6 +477,10 @@ window.addEventListener('DOMContentLoaded', () => {
     <div class="form-group" id="editCatGroupWrap"><label class="form-label">Category</label><div class="cat-chips" id="editCatChips"></div></div>
     <div class="form-group" id="editSrcGroupWrap" style="display:none"><label class="form-label">Source</label><div class="income-source-chips" id="editSrcChips"></div></div>
     <div class="form-group"><label class="form-label">Date</label><input type="date" class="form-input" id="editDate"></div>
+    <div class="form-group" id="editWhoGroup">
+      <label class="form-label">Added by</label>
+      <div class="who-selector" id="editWhoSelector"></div>
+    </div>
     <button class="btn-primary btn-warm" onclick="saveEdit()">Save Changes</button>
     <div class="btn-row"><button class="btn-primary btn-rose" onclick="deleteFromEdit()">🗑 Delete</button><button class="btn-primary" onclick="closeEditModal()">Cancel</button></div>
   </div>
@@ -524,7 +565,35 @@ function getAllCatsIncHidden(){return ALL_BASE_CATEGORIES.concat(state.customCat
 function showToast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2500);}
 function setSyncStatus(s){var dot=document.getElementById('syncDot');if(!dot)return;dot.className='sync-dot'+(s==='syncing'?' syncing':s==='offline'?' offline':'');}
 function activePage(){var p=['home','add','budget','charts'];for(var i=0;i<p.length;i++){if(document.getElementById('page-'+p[i]).classList.contains('active'))return p[i];}return 'home';}
-function currentUser(){return window._authUser||{displayName:'Me',email:''};}
+function currentUser(){return window._authUser||{displayName:'Me',email:'',uid:''};}
+
+// Resolve a stored "who" value (UID or legacy name) to a display name
+function resolveWho(who){
+  if(!who) return currentUser().displayName;
+  if(who.length>20 && window._allProfiles && window._allProfiles[who]){
+    return window._allProfiles[who].displayName||who;
+  }
+  return who;
+}
+
+// Get all known profiles as [{uid,displayName}]
+function getAllProfiles(){
+  var profiles=window._allProfiles||{};
+  return Object.keys(profiles).map(function(uid){
+    return {uid:uid,displayName:(profiles[uid].displayName||uid)};
+  });
+}
+
+// Listen for profile updates (so name changes reflect live)
+function listenProfiles(){
+  window._onValue(window._ref(window._db,'userProfiles'),function(snap){
+    window._allProfiles=snap.val()||{};
+    if(activePage()==='home') renderHome();
+    var dn=currentUser().uid&&window._allProfiles[currentUser().uid]?window._allProfiles[currentUser().uid].displayName:currentUser().displayName;
+    document.getElementById('userBadgeBtn').textContent=dn;
+    if(window._authUser) window._authUser.displayName=dn;
+  });
+}
 
 // ── LOGIN / AUTH ───────────────────────────────────────────────────────────
 function showLogin(){
@@ -584,9 +653,55 @@ function openAccountModal(){
   document.getElementById('accountName').textContent=u.displayName;
   document.getElementById('accountEmail').textContent=u.email;
   document.getElementById('accountAvatar').textContent=u.displayName.charAt(0).toUpperCase();
+  document.getElementById('accountNameInput').value=u.displayName;
+  // Reset rename UI
+  cancelRename();
   document.getElementById('accountModal').classList.add('open');
 }
 function closeAccountModal(){document.getElementById('accountModal').classList.remove('open');}
+
+function toggleRename(){
+  var editDiv=document.getElementById('accountNameEdit');
+  var toggleBtn=document.getElementById('renameToggleBtn');
+  var saveBtn=document.getElementById('renameSaveBtn');
+  var cancelBtn=document.getElementById('renameCancelBtn');
+  editDiv.style.display='block';
+  toggleBtn.style.display='none';
+  saveBtn.style.display='';
+  cancelBtn.style.display='';
+  document.getElementById('accountNameInput').focus();
+  document.getElementById('accountNameInput').select();
+}
+
+function cancelRename(){
+  document.getElementById('accountNameEdit').style.display='none';
+  document.getElementById('renameToggleBtn').style.display='';
+  document.getElementById('renameSaveBtn').style.display='none';
+  document.getElementById('renameCancelBtn').style.display='none';
+}
+
+function saveDisplayName(){
+  var newName=document.getElementById('accountNameInput').value.trim();
+  if(!newName){showToast('Name cannot be empty');return;}
+  var uid=currentUser().uid;
+  if(!uid){showToast('Not logged in');return;}
+  window._update(window._ref(window._db,'userProfiles/'+uid),{displayName:newName})
+    .then(function(){
+      // Update local authUser
+      window._authUser.displayName=newName;
+      document.getElementById('userBadgeBtn').textContent=newName;
+      document.getElementById('accountName').textContent=newName;
+      document.getElementById('accountAvatar').textContent=newName.charAt(0).toUpperCase();
+      // Update allProfiles cache
+      if(window._allProfiles && window._allProfiles[uid]){
+        window._allProfiles[uid].displayName=newName;
+      }
+      cancelRename();
+      showToast('✓ Name updated to "'+newName+'"');
+      if(activePage()==='home') renderHome();
+    })
+    .catch(function(){showToast('Failed — check connection');});
+}
 
 // ── INIT ───────────────────────────────────────────────────────────────────
 function finishInit(){
@@ -595,7 +710,7 @@ function finishInit(){
   document.getElementById('headerMonthText').textContent=monthKeyToLabel(state.currentMonth);
   document.getElementById('expDate').value=new Date().toISOString().split('T')[0];
   ensureListened(state.currentMonth);
-  listenBudgets(); listenCustomCats(); listenHiddenCats();
+  listenBudgets(); listenCustomCats(); listenHiddenCats(); listenProfiles();
   renderCatChips(); renderIncomeSourceChips(); renderHome(); checkNotif();
   window.addEventListener('online',function(){setSyncStatus('synced');showToast('Back online ✓');});
   window.addEventListener('offline',function(){setSyncStatus('offline');showToast('You are offline');});
@@ -667,18 +782,39 @@ function renderHome(){
   var active=CATS.filter(function(c){return (budget[c.id]||0)>0||(cs[c.id]||0)>0;});
   var pb=document.getElementById('progressBars');
   if(!active.length){pb.innerHTML='<div class="empty"><div class="empty-icon">📊</div><p>Set up your budget to see progress.</p></div>';}
-  else{pb.innerHTML=active.map(function(c){var spent=cs[c.id]||0,b=budget[c.id]||0,pct=b>0?Math.min((spent/b)*100,100):0,cls=b>0&&spent>b?'over':b>0&&pct>80?'warning':'';return '<div class="progress-row" onclick="openDrillModal(\''+c.id+'\')"><div class="progress-header"><div class="progress-cat">'+c.icon+' '+c.name+'</div><div class="progress-amounts">'+fmt(spent)+(b?' / '+fmt(b):'')+' <span class="progress-drill">›</span></div></div><div class="progress-track"><div class="progress-fill '+cls+'" style="width:'+pct+'%"></div></div></div>';}).join('');}
+  else{pb.innerHTML=active.map(function(c){var spent=cs[c.id]||0,b=budget[c.id]||0,pct=b>0?Math.min((spent/b)*100,100):0,cls=b>0&&spent>b?'over':b>0&&pct>80?'warning':'';return '<div class="progress-row" onclick="openDrillModal(''+c.id+'')"><div class="progress-header"><div class="progress-cat">'+c.icon+' '+c.name+'</div><div class="progress-amounts">'+fmt(spent)+(b?' / '+fmt(b):'')+' <span class="progress-drill">›</span></div></div><div class="progress-track"><div class="progress-fill '+cls+'" style="width:'+pct+'%"></div></div></div>';}).join('');}
 
-  var uName=currentUser().displayName;
+  function whoBadge(who){
+    var name=resolveWho(who);
+    var me=currentUser().displayName;
+    var isMe=name===me;
+    var cls=isMe?'who-badge':'who-badge elena';
+    return '<span class="'+cls+'">'+name+'</span>';
+  }
+
   var sortedExp=expenses.slice().sort(function(a,b){return new Date(b.date)-new Date(a.date);}).slice(0,8);
   var rl=document.getElementById('recentExpenses');
   if(!sortedExp.length){rl.innerHTML='<div class="empty"><div class="empty-icon">🧾</div><p>No expenses yet this month.</p></div>';}
-  else{rl.innerHTML=sortedExp.map(function(e){var cat=getAllCatsIncHidden().find(function(c){return c.id===e.category;})||ALL_BASE_CATEGORIES[ALL_BASE_CATEGORIES.length-1];var who=e.who||uName;var isElena=who==='Elena'||who==='elena';return '<div class="expense-item" onclick="openEditModal(\'expenses\',\''+state.currentMonth+'\',\''+e._key+'\')"><div class="exp-icon">'+cat.icon+'</div><div class="exp-details"><div class="exp-name">'+(e.desc||cat.name)+'<span class="who-badge'+(isElena?' elena':'')+'">'+(isElena?'Elena':'Nemanja')+'</span></div><div class="exp-meta">'+cat.name+' · '+fmtDate(e.date)+'</div></div><div class="exp-right"><div class="exp-amount">'+fmt(e.amount)+'</div><div class="exp-edit-hint">›</div></div></div>';}).join('');}
+  else{rl.innerHTML=sortedExp.map(function(e){
+    var cat=getAllCatsIncHidden().find(function(c){return c.id===e.category;})||ALL_BASE_CATEGORIES[ALL_BASE_CATEGORIES.length-1];
+    return '<div class="expense-item" onclick="openEditModal('expenses',''+state.currentMonth+'',''+e._key+'')">'
+      +'<div class="exp-icon">'+cat.icon+'</div>'
+      +'<div class="exp-details"><div class="exp-name">'+(e.desc||cat.name)+whoBadge(e.who)+'</div>'
+      +'<div class="exp-meta">'+cat.name+' · '+fmtDate(e.date)+'</div></div>'
+      +'<div class="exp-right"><div class="exp-amount">'+fmt(e.amount)+'</div><div class="exp-edit-hint">›</div></div></div>';
+  }).join('');}
 
   var sortedInc=incomes.slice().sort(function(a,b){return new Date(b.date)-new Date(a.date);}).slice(0,8);
   var il=document.getElementById('recentIncome');
   if(!sortedInc.length){il.innerHTML='<div class="empty"><div class="empty-icon">💚</div><p>No income logged this month.</p></div>';}
-  else{il.innerHTML=sortedInc.map(function(e){var src=INCOME_SOURCES.find(function(s){return s.id===e.source;})||INCOME_SOURCES[INCOME_SOURCES.length-1];var who=e.who||uName;var isElena=who==='Elena'||who==='elena';return '<div class="expense-item" onclick="openEditModal(\'income\',\''+state.currentMonth+'\',\''+e._key+'\')"><div class="exp-icon income-icon">'+src.icon+'</div><div class="exp-details"><div class="exp-name">'+(e.desc||src.name)+'<span class="who-badge'+(isElena?' elena':'')+'">'+(isElena?'Elena':'Nemanja')+'</span></div><div class="exp-meta">'+src.name+' · '+fmtDate(e.date)+'</div></div><div class="exp-right"><div class="exp-amount income-amount">+'+fmt(e.amount)+'</div><div class="exp-edit-hint">›</div></div></div>';}).join('');}
+  else{il.innerHTML=sortedInc.map(function(e){
+    var src=INCOME_SOURCES.find(function(s){return s.id===e.source;})||INCOME_SOURCES[INCOME_SOURCES.length-1];
+    return '<div class="expense-item" onclick="openEditModal('income',''+state.currentMonth+'',''+e._key+'')">'
+      +'<div class="exp-icon income-icon">'+src.icon+'</div>'
+      +'<div class="exp-details"><div class="exp-name">'+(e.desc||src.name)+whoBadge(e.who)+'</div>'
+      +'<div class="exp-meta">'+src.name+' · '+fmtDate(e.date)+'</div></div>'
+      +'<div class="exp-right"><div class="exp-amount income-amount">+'+fmt(e.amount)+'</div><div class="exp-edit-hint">›</div></div></div>';
+  }).join('');}
 }
 
 // ── DRILL-DOWN ─────────────────────────────────────────────────────────────
@@ -709,8 +845,17 @@ function renderDrillList(){
   var el=document.getElementById('drillExpenseList');
   if(!catExpenses.length){el.innerHTML='<div class="empty"><div class="empty-icon">🧾</div><p>No expenses in this category for '+monthKeyToLabel(mk)+'.</p></div>';return;}
   var cat=getAllCatsIncHidden().find(function(c){return c.id===catId;})||{icon:'📦'};
-  var uName=currentUser().displayName;
-  el.innerHTML=catExpenses.map(function(e){var who=e.who||uName;var isElena=who==='Elena'||who==='elena';return '<div class="expense-item" onclick="openEditModal(\'expenses\',\''+mk+'\',\''+e._key+'\')"><div class="exp-icon">'+cat.icon+'</div><div class="exp-details"><div class="exp-name">'+(e.desc||cat.name)+'<span class="who-badge'+(isElena?' elena':'')+'">'+(isElena?'Elena':'Nemanja')+'</span></div><div class="exp-meta">'+fmtDate(e.date)+'</div></div><div class="exp-right"><div class="exp-amount">'+fmt(e.amount)+'</div><div class="exp-edit-hint">›</div></div></div>';}).join('');
+  var me=currentUser().displayName;
+  el.innerHTML=catExpenses.map(function(e){
+    var name=resolveWho(e.who);
+    var isMe=name===me;
+    var badgeCls=isMe?'who-badge':'who-badge elena';
+    return '<div class="expense-item" onclick="openEditModal('expenses',''+mk+'',''+e._key+'')">'
+      +'<div class="exp-icon">'+cat.icon+'</div>'
+      +'<div class="exp-details"><div class="exp-name">'+(e.desc||cat.name)+'<span class="'+badgeCls+'">'+name+'</span></div>'
+      +'<div class="exp-meta">'+fmtDate(e.date)+'</div></div>'
+      +'<div class="exp-right"><div class="exp-amount">'+fmt(e.amount)+'</div><div class="exp-edit-hint">›</div></div></div>';
+  }).join('');
 }
 
 // ── ADD ENTRY ──────────────────────────────────────────────────────────────
@@ -752,13 +897,13 @@ function addEntry(){
   if(state.addType==='expense'){
     if(!state.selectedCat){showToast('Select a category');return;}
     setSyncStatus('syncing');
-    window._push(dbRef('expenses/'+mk),{amount:amt,desc:desc,date:date,category:state.selectedCat,who:uName,ts:Date.now()})
+    window._push(dbRef('expenses/'+mk),{amount:amt,desc:desc,date:date,category:state.selectedCat,who:currentUser().uid,ts:Date.now()})
       .then(function(){setSyncStatus('synced');document.getElementById('expAmount').value='';document.getElementById('expDesc').value='';document.getElementById('expDate').value=new Date().toISOString().split('T')[0];state.selectedCat=null;document.querySelectorAll('#catChips .cat-chip').forEach(function(c){c.classList.remove('selected');});showToast('✓ Expense saved!');showPage('home');})
       .catch(function(){setSyncStatus('offline');showToast('Failed — check connection');});
   } else {
     if(!state.selectedIncSrc){showToast('Select a source');return;}
     setSyncStatus('syncing');
-    window._push(dbRef('income/'+mk),{amount:amt,desc:desc,date:date,source:state.selectedIncSrc,who:uName,ts:Date.now()})
+    window._push(dbRef('income/'+mk),{amount:amt,desc:desc,date:date,source:state.selectedIncSrc,who:currentUser().uid,ts:Date.now()})
       .then(function(){setSyncStatus('synced');document.getElementById('expAmount').value='';document.getElementById('expDesc').value='';document.getElementById('expDate').value=new Date().toISOString().split('T')[0];state.selectedIncSrc=null;document.querySelectorAll('#incomeSourceChips .income-chip').forEach(function(c){c.classList.remove('selected');});showToast('✓ Income saved!');showPage('home');})
       .catch(function(){setSyncStatus('offline');showToast('Failed — check connection');});
   }
@@ -770,18 +915,54 @@ function renderEditSrcChips(){var el=document.getElementById('editSrcChips');if(
 function selEditCat(id){state.editSelectedCat=id;document.querySelectorAll('#editCatChips .cat-chip').forEach(function(c){c.classList.remove('selected');});var el=document.getElementById('editchip-'+id);if(el)el.classList.add('selected');}
 function selEditSrc(id){state.editSelectedSrc=id;document.querySelectorAll('#editSrcChips .income-chip').forEach(function(c){c.classList.remove('selected');});var el=document.getElementById('editsrc-'+id);if(el)el.classList.add('selected');}
 
+function renderEditWhoSelector(){
+  var profiles=getAllProfiles();
+  var sel=state.editSelectedWho;
+  var el=document.getElementById('editWhoSelector');
+  if(!el) return;
+  if(!profiles.length){el.innerHTML='<div style="color:var(--muted);font-size:13px">No profiles found</div>';return;}
+  el.innerHTML=profiles.map(function(p){
+    var isSelected=sel===p.uid;
+    var isMe=p.uid===currentUser().uid;
+    var cls='who-option'+(isSelected?(isMe?' selected':' selected-spouse'):'');
+    return '<button class="'+cls+'" onclick="setEditWho(\''+p.uid+'\')">👤 '+p.displayName+'</button>';
+  }).join('');
+}
+
+function setEditWho(uid){
+  state.editSelectedWho=uid;
+  renderEditWhoSelector();
+}
+
 function openEditModal(collection,monthKey,key){
   var src=collection==='income'?state.income:state.expenses;
   var entry=src[monthKey]&&src[monthKey][key];if(!entry)return;
   state.editingEntry={collection:collection,monthKey:monthKey,key:key,entry:entry};
   var isIncome=collection==='income';
   document.getElementById('editModalTitle').textContent=isIncome?'Edit Income':'Edit Expense';
-  document.getElementById('editModalSubtitle').textContent='Added by '+(entry.who||currentUser().displayName);
+  document.getElementById('editModalSubtitle').textContent='Added by '+resolveWho(entry.who);
   document.getElementById('editAmount').value=entry.amount||'';
   document.getElementById('editDesc').value=entry.desc||'';
   document.getElementById('editDate').value=entry.date||'';
-  if(isIncome){document.getElementById('editCatGroupWrap').style.display='none';document.getElementById('editSrcGroupWrap').style.display='';state.editSelectedSrc=entry.source||null;state.editSelectedCat=null;renderEditSrcChips();}
-  else{document.getElementById('editCatGroupWrap').style.display='';document.getElementById('editSrcGroupWrap').style.display='none';state.editSelectedCat=entry.category||null;state.editSelectedSrc=null;renderEditCatChips();}
+  // Pre-select who: if stored as UID use it, else try to match by name
+  var profiles=getAllProfiles();
+  var whoUid=entry.who;
+  if(whoUid && whoUid.length<=20){
+    // Legacy name — try to find matching UID
+    var match=profiles.find(function(p){return p.displayName===whoUid;});
+    whoUid=match?match.uid:currentUser().uid;
+  }
+  state.editSelectedWho=whoUid||currentUser().uid;
+  if(isIncome){
+    document.getElementById('editCatGroupWrap').style.display='none';
+    document.getElementById('editSrcGroupWrap').style.display='';
+    state.editSelectedSrc=entry.source||null; state.editSelectedCat=null; renderEditSrcChips();
+  } else {
+    document.getElementById('editCatGroupWrap').style.display='';
+    document.getElementById('editSrcGroupWrap').style.display='none';
+    state.editSelectedCat=entry.category||null; state.editSelectedSrc=null; renderEditCatChips();
+  }
+  renderEditWhoSelector();
   document.getElementById('editModal').classList.add('open');
 }
 
@@ -799,7 +980,7 @@ function saveEdit(){
   if(isIncome&&!state.editSelectedSrc){showToast('Select a source');return;}
   if(!isIncome&&!state.editSelectedCat){showToast('Select a category');return;}
   var newMk=date.split('-').slice(0,2).join('-');
-  var updated={amount:amt,desc:desc,date:date,who:orig.who||currentUser().displayName,ts:orig.ts||Date.now(),editedAt:Date.now()};
+  var updated={amount:amt,desc:desc,date:date,who:state.editSelectedWho||orig.who||currentUser().uid,ts:orig.ts||Date.now(),editedAt:Date.now()};
   if(isIncome)updated.source=state.editSelectedSrc;else updated.category=state.editSelectedCat;
   setSyncStatus('syncing');
   if(newMk!==mk){ensureListened(newMk);Promise.all([window._remove(dbRef(col+'/'+mk+'/'+key)),window._push(dbRef(col+'/'+newMk),updated)]).then(function(){setSyncStatus('synced');closeEditModal();showToast('✓ Saved!');}).catch(function(){setSyncStatus('offline');showToast('Failed — check connection');});}
