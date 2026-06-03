@@ -785,14 +785,15 @@ function renderHome(){
   else{pb.innerHTML=active.map(function(c){
     var spent=cs[c.id]||0,b=budget[c.id]||0,pct=b>0?Math.min((spent/b)*100,100):0;
     var cls=b>0&&spent>b?'over':b>0&&pct>80?'warning':'';
-    var html='<div class="progress-row" onclick="openDrillModal(\'' + c.id + '\')">';
-    html+='<div class="progress-header">';
-    html+='<div class="progress-cat">'+c.icon+' '+c.name+'</div>';
-    html+='<div class="progress-amounts">'+fmt(spent)+(b?' / '+fmt(b):'');
-    html+=' <span class="progress-drill">›</span></div></div>';
-    html+='<div class="progress-track"><div class="progress-fill '+cls+'" style="width:'+pct+'%"></div></div>';
-    html+='</div>';
-    return html;
+    var pDiv=document.createElement('div');
+    pDiv.className='progress-row';
+    pDiv.setAttribute('onclick','openDrillModal("'+c.id+'")');
+    pDiv.innerHTML='<div class="progress-header">'
+      +'<div class="progress-cat">'+c.icon+' '+c.name+'</div>'
+      +'<div class="progress-amounts">'+fmt(spent)+(b?' / '+fmt(b):'')
+      +' <span class="progress-drill">›</span></div></div>'
+      +'<div class="progress-track"><div class="progress-fill '+cls+'" style="width:'+pct+'%"></div></div>';
+    return pDiv.outerHTML;
   }).join('');}
 
   function whoBadge(who){
@@ -808,11 +809,15 @@ function renderHome(){
   if(!sortedExp.length){rl.innerHTML='<div class="empty"><div class="empty-icon">🧾</div><p>No expenses yet this month.</p></div>';}
   else{rl.innerHTML=sortedExp.map(function(e){
     var cat=getAllCatsIncHidden().find(function(c){return c.id===e.category;})||ALL_BASE_CATEGORIES[ALL_BASE_CATEGORIES.length-1];
-    return '<div class="expense-item" onclick="openEditModal(\'expenses\',\'state.currentMonth+\'\',\'e._key+\')">'
-      +'<div class="exp-icon">'+cat.icon+'</div>'
+    var mk=state.currentMonth, key=e._key;
+    var div=document.createElement('div');
+    div.className='expense-item';
+    div.setAttribute('onclick','openEditModal("expenses","'+mk+'","'+key+'")');
+    div.innerHTML='<div class="exp-icon">'+cat.icon+'</div>'
       +'<div class="exp-details"><div class="exp-name">'+(e.desc||cat.name)+whoBadge(e.who)+'</div>'
       +'<div class="exp-meta">'+cat.name+' · '+fmtDate(e.date)+'</div></div>'
-      +'<div class="exp-right"><div class="exp-amount">'+fmt(e.amount)+'</div><div class="exp-edit-hint">›</div></div></div>';
+      +'<div class="exp-right"><div class="exp-amount">'+fmt(e.amount)+'</div><div class="exp-edit-hint">›</div></div>';
+    return div.outerHTML;
   }).join('');}
 
   var sortedInc=incomes.slice().sort(function(a,b){return new Date(b.date)-new Date(a.date);}).slice(0,8);
@@ -820,11 +825,15 @@ function renderHome(){
   if(!sortedInc.length){il.innerHTML='<div class="empty"><div class="empty-icon">💚</div><p>No income logged this month.</p></div>';}
   else{il.innerHTML=sortedInc.map(function(e){
     var src=INCOME_SOURCES.find(function(s){return s.id===e.source;})||INCOME_SOURCES[INCOME_SOURCES.length-1];
-    return '<div class="expense-item" onclick="openEditModal(\'income\',\'state.currentMonth+\'\',\'e._key+\')">'
-      +'<div class="exp-icon income-icon">'+src.icon+'</div>'
+    var mk=state.currentMonth, key=e._key;
+    var div=document.createElement('div');
+    div.className='expense-item';
+    div.setAttribute('onclick','openEditModal("income","'+mk+'","'+key+'")');
+    div.innerHTML='<div class="exp-icon income-icon">'+src.icon+'</div>'
       +'<div class="exp-details"><div class="exp-name">'+(e.desc||src.name)+whoBadge(e.who)+'</div>'
       +'<div class="exp-meta">'+src.name+' · '+fmtDate(e.date)+'</div></div>'
-      +'<div class="exp-right"><div class="exp-amount income-amount">+'+fmt(e.amount)+'</div><div class="exp-edit-hint">›</div></div></div>';
+      +'<div class="exp-right"><div class="exp-amount income-amount">+'+fmt(e.amount)+'</div><div class="exp-edit-hint">›</div></div>';
+    return div.outerHTML;
   }).join('');}
 }
 
@@ -861,11 +870,14 @@ function renderDrillList(){
     var name=resolveWho(e.who);
     var isMe=name===me;
     var badgeCls=isMe?'who-badge':'who-badge elena';
-    return '<div class="expense-item" onclick="openEditModal(\'expenses\',\'mk+\'\',\'e._key+\')">'
-      +'<div class="exp-icon">'+cat.icon+'</div>'
+    var div=document.createElement('div');
+    div.className='expense-item';
+    div.setAttribute('onclick','openEditModal("expenses","'+mk+'","'+e._key+'")');
+    div.innerHTML='<div class="exp-icon">'+cat.icon+'</div>'
       +'<div class="exp-details"><div class="exp-name">'+(e.desc||cat.name)+'<span class="'+badgeCls+'">'+name+'</span></div>'
       +'<div class="exp-meta">'+fmtDate(e.date)+'</div></div>'
-      +'<div class="exp-right"><div class="exp-amount">'+fmt(e.amount)+'</div><div class="exp-edit-hint">›</div></div></div>';
+      +'<div class="exp-right"><div class="exp-amount">'+fmt(e.amount)+'</div><div class="exp-edit-hint">›</div></div>';
+    return div.outerHTML;
   }).join('');
 }
 
@@ -1032,7 +1044,24 @@ function closeCustomCatModal(){document.getElementById('customCatModal').classLi
 function saveCustomCategory(){var name=document.getElementById('newCatName').value.trim();if(!name){showToast('Enter a name');return;}var id='custom_'+Date.now(),cat={id:id,icon:state.selectedEmoji||'📦',name:name};setSyncStatus('syncing');window._push(dbRef('customCategories'),cat).then(function(){setSyncStatus('synced');closeCustomCatModal();setTimeout(function(){selCat(id);renderManageCats();},200);showToast('"'+name+'" added!');}).catch(function(){setSyncStatus('offline');showToast('Failed — check connection');});}
 
 // ── BUDGET ─────────────────────────────────────────────────────────────────
-function renderBudgetPage(){var CATS=getAllCats(),bud=state.budgets[state.budgetMonth]||{};document.getElementById('budgetCategoryList').innerHTML=CATS.map(function(c){return '<div class="category-row"><div class="cat-icon-wrap">'+c.icon+'</div><div class="cat-name" style="cursor:pointer" onclick="openDrillModal(\''+c.id+'\')">'+c.name+'</div><input class="cat-input" type="number" inputmode="decimal" placeholder="0.00" id="bud-'+c.id+'" value="'+(bud[c.id]||'')+'" step="0.01"></div>';}).join('');document.getElementById('budgetMonthLabel').textContent=monthKeyToLabel(state.budgetMonth);}
+function renderBudgetPage(){
+  var CATS=getAllCats(), bud=state.budgets[state.budgetMonth]||{};
+  document.getElementById('budgetCategoryList').innerHTML=CATS.map(function(c){
+    var row=document.createElement('div');
+    row.className='category-row';
+    var iconDiv='<div class="cat-icon-wrap">'+c.icon+'</div>';
+    var nameBtn=document.createElement('div');
+    nameBtn.className='cat-name';
+    nameBtn.style.cursor='pointer';
+    nameBtn.setAttribute('onclick','openDrillModal("'+c.id+'")');
+    nameBtn.textContent=c.name;
+    var input='<input class="cat-input" type="number" inputmode="decimal" placeholder="0.00" id="bud-'+c.id+'" value="'+(bud[c.id]||'')+'" step="0.01">';
+    row.innerHTML=iconDiv+nameBtn.outerHTML+input;
+    return row.outerHTML;
+  }).join('');
+  document.getElementById('budgetMonthLabel').textContent=monthKeyToLabel(state.budgetMonth);
+}
+
 function saveBudget(){var CATS=getAllCats(),bud={};CATS.forEach(function(c){var el=document.getElementById('bud-'+c.id);if(el){var v=parseFloat(el.value);if(v>0)bud[c.id]=v;}});setSyncStatus('syncing');window._set(dbRef('budgets/'+state.budgetMonth),bud).then(function(){setSyncStatus('synced');showToast('✓ Budget saved!');}).catch(function(){setSyncStatus('offline');showToast('Failed — check connection');});}
 function copyLastMonth(){var p=state.budgetMonth.split('-').map(Number),y=p[0],m=p[1];var prev=m===1?(y-1)+'-12':y+'-'+String(m-1).padStart(2,'0');var pb=state.budgets[prev]||{};if(!Object.keys(pb).length){showToast('No previous month budget found');return;}window._set(dbRef('budgets/'+state.budgetMonth),pb).then(function(){showToast('✓ Copied!');}).catch(function(){showToast('Failed — check connection');});}
 function changeMonth(dir){var p=state.budgetMonth.split('-').map(Number),d=new Date(p[0],p[1]-1+dir,1);state.budgetMonth=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');renderBudgetPage();}
