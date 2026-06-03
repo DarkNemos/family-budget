@@ -782,7 +782,18 @@ function renderHome(){
   var active=CATS.filter(function(c){return (budget[c.id]||0)>0||(cs[c.id]||0)>0;});
   var pb=document.getElementById('progressBars');
   if(!active.length){pb.innerHTML='<div class="empty"><div class="empty-icon">📊</div><p>Set up your budget to see progress.</p></div>';}
-  else{pb.innerHTML=active.map(function(c){var spent=cs[c.id]||0,b=budget[c.id]||0,pct=b>0?Math.min((spent/b)*100,100):0,cls=b>0&&spent>b?'over':b>0&&pct>80?'warning':'';return '<div class="progress-row" onclick="openDrillModal(''+c.id+'')"><div class="progress-header"><div class="progress-cat">'+c.icon+' '+c.name+'</div><div class="progress-amounts">'+fmt(spent)+(b?' / '+fmt(b):'')+' <span class="progress-drill">›</span></div></div><div class="progress-track"><div class="progress-fill '+cls+'" style="width:'+pct+'%"></div></div></div>';}).join('');}
+  else{pb.innerHTML=active.map(function(c){
+    var spent=cs[c.id]||0,b=budget[c.id]||0,pct=b>0?Math.min((spent/b)*100,100):0;
+    var cls=b>0&&spent>b?'over':b>0&&pct>80?'warning':'';
+    var html='<div class="progress-row" onclick="openDrillModal(\'' + c.id + '\')">';
+    html+='<div class="progress-header">';
+    html+='<div class="progress-cat">'+c.icon+' '+c.name+'</div>';
+    html+='<div class="progress-amounts">'+fmt(spent)+(b?' / '+fmt(b):'');
+    html+=' <span class="progress-drill">›</span></div></div>';
+    html+='<div class="progress-track"><div class="progress-fill '+cls+'" style="width:'+pct+'%"></div></div>';
+    html+='</div>';
+    return html;
+  }).join('');}
 
   function whoBadge(who){
     var name=resolveWho(who);
@@ -797,7 +808,7 @@ function renderHome(){
   if(!sortedExp.length){rl.innerHTML='<div class="empty"><div class="empty-icon">🧾</div><p>No expenses yet this month.</p></div>';}
   else{rl.innerHTML=sortedExp.map(function(e){
     var cat=getAllCatsIncHidden().find(function(c){return c.id===e.category;})||ALL_BASE_CATEGORIES[ALL_BASE_CATEGORIES.length-1];
-    return '<div class="expense-item" onclick="openEditModal('expenses',''+state.currentMonth+'',''+e._key+'')">'
+    return '<div class="expense-item" onclick="openEditModal(\'expenses\',\'state.currentMonth+\'\',\'e._key+\')">'
       +'<div class="exp-icon">'+cat.icon+'</div>'
       +'<div class="exp-details"><div class="exp-name">'+(e.desc||cat.name)+whoBadge(e.who)+'</div>'
       +'<div class="exp-meta">'+cat.name+' · '+fmtDate(e.date)+'</div></div>'
@@ -809,7 +820,7 @@ function renderHome(){
   if(!sortedInc.length){il.innerHTML='<div class="empty"><div class="empty-icon">💚</div><p>No income logged this month.</p></div>';}
   else{il.innerHTML=sortedInc.map(function(e){
     var src=INCOME_SOURCES.find(function(s){return s.id===e.source;})||INCOME_SOURCES[INCOME_SOURCES.length-1];
-    return '<div class="expense-item" onclick="openEditModal('income',''+state.currentMonth+'',''+e._key+'')">'
+    return '<div class="expense-item" onclick="openEditModal(\'income\',\'state.currentMonth+\'\',\'e._key+\')">'
       +'<div class="exp-icon income-icon">'+src.icon+'</div>'
       +'<div class="exp-details"><div class="exp-name">'+(e.desc||src.name)+whoBadge(e.who)+'</div>'
       +'<div class="exp-meta">'+src.name+' · '+fmtDate(e.date)+'</div></div>'
@@ -850,7 +861,7 @@ function renderDrillList(){
     var name=resolveWho(e.who);
     var isMe=name===me;
     var badgeCls=isMe?'who-badge':'who-badge elena';
-    return '<div class="expense-item" onclick="openEditModal('expenses',''+mk+'',''+e._key+'')">'
+    return '<div class="expense-item" onclick="openEditModal(\'expenses\',\'mk+\'\',\'e._key+\')">'
       +'<div class="exp-icon">'+cat.icon+'</div>'
       +'<div class="exp-details"><div class="exp-name">'+(e.desc||cat.name)+'<span class="'+badgeCls+'">'+name+'</span></div>'
       +'<div class="exp-meta">'+fmtDate(e.date)+'</div></div>'
