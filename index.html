@@ -804,7 +804,7 @@ function renderHome(){
     return '<span class="'+cls+'">'+name+'</span>';
   }
 
-  var sortedExp=expenses.slice().sort(function(a,b){return new Date(b.date)-new Date(a.date);}).slice(0,8);
+  var sortedExp=expenses.slice().sort(function(a,b){var ta=b.ts||new Date(b.date).getTime();var tb=a.ts||new Date(a.date).getTime();return ta-tb;}).slice(0,8);
   var rl=document.getElementById('recentExpenses');
   if(!sortedExp.length){rl.innerHTML='<div class="empty"><div class="empty-icon">🧾</div><p>No expenses yet this month.</p></div>';}
   else{rl.innerHTML=sortedExp.map(function(e){
@@ -820,7 +820,7 @@ function renderHome(){
     return div.outerHTML;
   }).join('');}
 
-  var sortedInc=incomes.slice().sort(function(a,b){return new Date(b.date)-new Date(a.date);}).slice(0,8);
+  var sortedInc=incomes.slice().sort(function(a,b){var ta=b.ts||new Date(b.date).getTime();var tb=a.ts||new Date(a.date).getTime();return ta-tb;}).slice(0,8);
   var il=document.getElementById('recentIncome');
   if(!sortedInc.length){il.innerHTML='<div class="empty"><div class="empty-icon">💚</div><p>No income logged this month.</p></div>';}
   else{il.innerHTML=sortedInc.map(function(e){
@@ -846,7 +846,7 @@ function renderDrillModal(){
   var catId=state.drillCatId, mk=state.drillMonthKey;
   var cat=getAllCatsIncHidden().find(function(c){return c.id===catId;})||{icon:'📦',name:'Category',id:catId};
   var budget=state.budgets[mk]||{};
-  var catExpenses=Object.values(state.expenses[mk]||{}).filter(function(e){return e.category===catId;}).sort(function(a,b){return new Date(b.date)-new Date(a.date);});
+  var catExpenses=Object.values(state.expenses[mk]||{}).filter(function(e){return e.category===catId;}).sort(function(a,b){var ta=b.ts||new Date(b.date).getTime();var tb=a.ts||new Date(a.date).getTime();return ta-tb;});
   var totalSpent=catExpenses.reduce(function(s,e){return s+(+e.amount||0);},0);
   var bud=budget[catId]||0;
   document.getElementById('drillIcon').textContent=cat.icon;
@@ -861,7 +861,7 @@ function renderDrillModal(){
 
 function renderDrillList(){
   var catId=state.drillCatId, mk=state.drillMonthKey;
-  var catExpenses=Object.values(state.expenses[mk]||{}).filter(function(e){return e.category===catId;}).sort(function(a,b){return new Date(b.date)-new Date(a.date);});
+  var catExpenses=Object.values(state.expenses[mk]||{}).filter(function(e){return e.category===catId;}).sort(function(a,b){var ta=b.ts||new Date(b.date).getTime();var tb=a.ts||new Date(a.date).getTime();return ta-tb;});
   var el=document.getElementById('drillExpenseList');
   if(!catExpenses.length){el.innerHTML='<div class="empty"><div class="empty-icon">🧾</div><p>No expenses in this category for '+monthKeyToLabel(mk)+'.</p></div>';return;}
   var cat=getAllCatsIncHidden().find(function(c){return c.id===catId;})||{icon:'📦'};
